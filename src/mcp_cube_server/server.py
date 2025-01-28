@@ -17,8 +17,9 @@ def data_to_yaml(data: Any) -> str:
 
 class CubeClient:
     Route = Literal["meta", "load"]
-    max_retries = 10
-    wait_time = 1
+    max_retries = 100
+    initial_wait_time = 1  # Initial wait time in seconds
+    max_wait_time = 32  # Maximum wait time in seconds
 
     def __init__(self, endpoint: str, api_secret: str, token_payload: dict):
         self.endpoint = endpoint
@@ -26,7 +27,6 @@ class CubeClient:
         self.token_payload = token_payload
         self.token = None
         self.logger = logging.getLogger("mcp_cube_server")
-        self.retry_count = 0
         self._refresh_token()
         self.meta = self.describe()
 
@@ -37,28 +37,47 @@ class CubeClient:
         self.token = self._generate_token()
 
     def _request(self, route: Route, **params):
-        if self.retry_count >= self.max_retries:
-            self.logger.error("Max retries exceeded")
-            self.retry_count = 0
-            return {"error": "Request timeout"}
-        headers = {"Authorization": self.token}
-        url = f"{self.endpoint if self.endpoint[-1] != '/' else self.endpoint[:-1]}/{route}"
-        serialized_params = {k: json.dumps(v) for k, v in params.items()}
-        response = requests.get(url, headers=headers, params=serialized_params)
+        retry_count = 0
+        wait_time = self.initial_wait_time
 
-        if response.status_code == 400:
-            if response.json().get("error") == "Continue wait":
-                self.retry_count += 1
-                time.sleep(self.wait_time)
-                return self._request(route, **params)
-        elif response.status_code == 403:
-            self._refresh_token()
-            self.retry_count = self.max_retries
-            return self._request(route, **params)
+        while retry_count < self.max_retries:
+            headers = {"Authorization": self.token}
+            url = f"{self.endpoint if self.endpoint[-1] != '/' else self.endpoint[:-1]}/{route}"
+            serialized_params = {k: json.dumps(v) for k, v in params.items()}
 
-        json_response = response.json()
-        self.retry_count = 0
-        return json_response
+            try:
+                response = requests.get(url, headers=headers, params=serialized_params)
+
+                if response.status_code == 200:
+                    return response.json()
+
+                elif response.status_code == 400:
+                    if response.json().get("error") == "Continue wait":
+                        retry_count += 1
+                        self.logger.warning(f"Request attempt {retry_count} failed, retrying in {wait_time} seconds")
+                        time.sleep(wait_time)
+                        # Exponential backoff with maximum limit
+                        wait_time = min(wait_time * 2, self.max_wait_time)
+                        continue
+
+                elif response.status_code == 403:
+                    self._refresh_token()
+                    # Don't count this as a retry, just refresh token and try again
+                    continue
+
+                # For any other status code, return the response
+                return response.json()
+
+            except requests.exceptions.RequestException as e:
+                retry_count += 1
+                self.logger.error(f"Request failed with error: {str(e)}")
+                if retry_count >= self.max_retries:
+                    break
+                time.sleep(wait_time)
+                wait_time = min(wait_time * 2, self.max_wait_time)
+
+        self.logger.error("Max retries exceeded")
+        return {"error": "Request timeout"}
 
     def describe(self):
         return self._request("meta")
@@ -93,73 +112,69 @@ class CubeClient:
 
 class Query(BaseModel):
     class Filter(BaseModel):
-        member: Annotated[Optional[str], Field(..., description="Name of the measure or dimension to filter on")] = None
-        operator: Annotated[
-            Optional[
-                Literal[
-                    "equals",
-                    "notEquals",
-                    "contains",
-                    "notContains",
-                    "startsWith",
-                    "notStartsWith",
-                    "endsWith",
-                    "notEndsWith",
-                    "gt",
-                    "gte",
-                    "lt",
-                    "lte",
-                    "set",
-                    "notSet",
-                    "inDateRange",
-                    "notInDateRange",
-                    "beforeDate",
-                    "afterDate",
-                    "measureFilter",
-                ]
-            ],
-            Field(..., description="Operator to apply to the filter"),
-        ] = None
-        values: Annotated[
-            Optional[list[Union[str, int, float]]],
-            Field(..., description="Right-hand side of the filter. 0-n values depending on the operator"),
-        ] = None
-        or_filters: 'Annotated[Optional[list[Filter]], Field(..., description="List of filters to combine with OR logic. If present, other fields are ignored", alias="or")]' = None  # type: ignore # noqa: F821
-        and_filters: 'Annotated[Optional[list[Filter]], Field(..., description="List of filters to combine with AND logic. If present, other fields are ignored", alias="and")]' = (  # type: ignore  # noqa: F821
-            None  # noqa: F821
+        member: Optional[str] = Field(None, description="Name of the measure or dimension to filter on")
+        operator: Optional[
+            Literal[
+                "equals",
+                "notEquals",
+                "contains",
+                "notContains",
+                "startsWith",
+                "notStartsWith",
+                "endsWith",
+                "notEndsWith",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "set",
+                "notSet",
+                "inDateRange",
+                "notInDateRange",
+                "beforeDate",
+                "afterDate",
+                "measureFilter",
+            ]
+        ] = Field(None, description="Operator to apply to the filter")
+        values: Optional[list[Union[str, int, float]]] = Field(
+            None, description="Right-hand side of the filter. 0-n values depending on the operator"
+        )
+        or_filters: Optional[list["Filter"]] = Field(  # type: ignore  # noqa: F821
+            None, description="List of filters to combine with OR logic. If present, other fields are ignored", alias="or"
+        )
+        and_filters: Optional[list["Filter"]] = Field(  # type: ignore  # noqa: F821
+            None, description="List of filters to combine with AND logic. If present, other fields are ignored", alias="and"
         )
 
+        model_config = {"exclude_none": True}
+
     class TimeDimension(BaseModel):
-        dimension: Annotated[str, Field(..., description="Name of the time dimension")]
-        granularity: Annotated[
-            Literal["second", "minute", "hour", "day", "week", "month", "quarter", "year"],
-            Field(..., description="Time granularity"),
-        ]
-        dateRange: Annotated[
-            Union[list[str], str],
-            Field(
-                ...,
-                description="Pair of dates ISO dates representing the start and end of the range. Alternatively, a string representing a relative date range of the form: 'last N days', 'today', 'yesterday', 'last year', etc.",
-            ),
-        ]
+        dimension: str = Field(..., description="Name of the time dimension")
+        granularity: Literal["second", "minute", "hour", "day", "week", "month", "quarter", "year"] = Field(
+            ..., description="Time granularity"
+        )
+        dateRange: Union[list[str], str] = Field(
+            ...,
+            description="Pair of dates ISO dates representing the start and end of the range. Alternatively, a string representing a relative date range of the form: 'last N days', 'today', 'yesterday', 'last year', etc.",
+        )
 
-    measures: Annotated[list[str], Field(..., description="Names of measures to query")]
-    dimensions: Annotated[Optional[list[str]], Field(..., description="Names of dimensions to group by")] = None
-    timeDimensions: Annotated[list[TimeDimension], Field(..., description="Time dimensions to group by")] = None
-    filters: Annotated[Optional[list[Filter]], Field(..., description="Filters to apply to the query")] = None
-    limit: Annotated[Optional[int], Field(..., description="Maximum number of rows to return. Defaults to 500")] = 500
-    offset: Annotated[Optional[int], Field(..., description="Number of rows to skip. Defaults to 0")] = 0
-    order: Annotated[
-        Optional[dict[str, Literal["asc", "desc"]]],
-        Field(..., description="Optional ordering of the results. The order is sensitive to the order of keys."),
-    ] = None
-    ungrouped: Annotated[
-        Optional[bool], Field(..., description="Return results without grouping by dimensions. Instead, return all rows.")
-    ] = False
+        model_config = {"exclude_none": True}
 
+    measures: list[str] = Field([], description="Names of measures to query")
+    dimensions: list[str] = Field([], description="Names of dimensions to group by")
+    timeDimensions: list[TimeDimension] = Field([], description="Time dimensions to group by")
+    filters: list[Filter] = Field([], description="Filters to apply to the query")
+    limit: Optional[int] = Field(500, description="Maximum number of rows to return. Defaults to 500")
+    offset: Optional[int] = Field(0, description="Number of rows to skip. Defaults to 0")
+    order: dict[str, Literal["asc", "desc"]] = Field(
+        {}, description="Optional ordering of the results. The order is sensitive to the order of keys."
+    )
+    ungrouped: bool = Field(
+        False,
+        description="Return results without grouping by dimensions. Instead, return all rows. This can be useful for fetching a single row by its ID as well.",
+    )
 
-# Print json schema
-print(json.dumps(Query.model_json_schema(), indent=2))
+    model_config = {"exclude_none": True}
 
 
 def main(credentials):
@@ -175,7 +190,7 @@ def main(credentials):
         if error := meta.get("error"):
             logger.error("Error in data_description: %s\n\n%s", error, meta.get("stack"))
             logger.error("Full response: %s", json.dumps(meta))
-            return f"Error: Description of the data is not available: {error}"
+            return f"Error: Description of the data is not available: {error}, {meta}"
 
         description = [
             {
@@ -213,7 +228,7 @@ def main(credentials):
     @mcp.tool("read_data")
     def read_data(query: Query) -> str:
         """Read data from Cube."""
-        query_dict = dict(query)
+        query_dict = query.model_dump(by_alias=True, exclude_none=True)
         logger.info("read_data called with query: %s", json.dumps(query_dict))
         response = client.query(query_dict)
         if error := response.get("error"):

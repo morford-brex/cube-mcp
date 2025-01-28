@@ -7,6 +7,24 @@ import json
 import logging
 
 
+def args_to_kwargs(unknown):
+    extras = {}
+    i = 0
+    while i < len(unknown):
+        if unknown[i].startswith("--"):
+            key = unknown[i][2:]  # Remove '--' prefix
+            if i + 1 >= len(unknown) or unknown[i + 1].startswith("--"):
+                extras[key] = True  # Flag argument
+                i += 1
+            else:
+                extras[key] = unknown[i + 1]  # Key-value pair
+                i += 2
+        else:
+            i += 1
+
+    return extras
+
+
 def main():
     """Main entry point for the package."""
     parser = argparse.ArgumentParser(description="Cube MCP Server")
@@ -18,14 +36,18 @@ def main():
     required = {
         "endpoint": os.getenv("CUBE_ENDPOINT"),
         "api_secret": os.getenv("CUBE_API_SECRET"),
-        "token_payload": os.getenv("CUBE_TOKEN_PAYLOAD"),
+        "token_payload": os.getenv("CUBE_TOKEN_PAYLOAD", "{}"),
     }
 
     parser.add_argument("--endpoint", required=not required["endpoint"], default=required["endpoint"])
     parser.add_argument("--api_secret", required=not required["api_secret"], default=required["api_secret"])
-    parser.add_argument("--token_payload", required=not required["token_payload"], default=required["token_payload"])
 
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
+    additional_kwargs = args_to_kwargs(unknown)
+
+    token_payload = json.loads(required["token_payload"])
+    for key, value in additional_kwargs.items():
+        token_payload[key] = value
 
     logging.basicConfig(
         level=args.log_level,
@@ -40,7 +62,7 @@ def main():
         credentials = {
             "endpoint": args.endpoint,
             "api_secret": args.api_secret,
-            "token_payload": json.loads(args.token_payload),
+            "token_payload": token_payload,
         }
     except json.JSONDecodeError:
         logger.error("Invalid JSON in token_payload: %s", args.token_payload)
