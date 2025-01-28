@@ -223,7 +223,7 @@ def main(credentials):
     @mcp.tool("describe_data")
     def describe_data() -> str:
         """Describe the data available in Cube."""
-        return data_description()
+        return {"type": "text", "text": data_description()}
 
     @mcp.tool("read_data")
     def read_data(query: Query) -> str:
@@ -246,6 +246,11 @@ def main(credentials):
 
         logger.info("Added results as resource with ID: %s", data_id)
 
-        return f"Data ID: {data_id}\n\n" + data_to_yaml(data)
+        output = {
+            "type": "data",
+            "data_id": data_id,
+            "data": data,
+        }
+        return json.dumps(output)
 
     mcp.run()
