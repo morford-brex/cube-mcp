@@ -172,6 +172,11 @@ def main(credentials):
     def data_description() -> str:
         """Describe the data available in Cube."""
         meta = client.describe()
+        if error := meta.get("error"):
+            logger.error("Error in data_description: %s\n\n%s", error, meta.get("stack"))
+            logger.error("Full response: %s", json.dumps(meta))
+            return f"Error: Description of the data is not available: {error}"
+
         description = [
             {
                 "name": cube.get("name"),
@@ -200,6 +205,11 @@ def main(credentials):
             description, indent=2, sort_keys=True
         )
 
+    @mcp.tool("describe_data")
+    def describe_data() -> str:
+        """Describe the data available in Cube."""
+        return data_description()
+
     @mcp.tool("read_data")
     def read_data(query: Query) -> str:
         """Read data from Cube."""
@@ -215,7 +225,7 @@ def main(credentials):
 
         data_id = str(uuid.uuid4())
 
-        @mcp.resource(f"context://data/{data_id}")
+        @mcp.resource(f"data://{data_id}")
         def data_resource() -> str:
             return json.dumps(data)
 
