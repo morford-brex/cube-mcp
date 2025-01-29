@@ -8,7 +8,6 @@ startCommand:
     required:
       - endpoint
       - apiSecret
-      - tokenPayload
     properties:
       endpoint:
         type: string
@@ -16,9 +15,6 @@ startCommand:
       apiSecret:
         type: string
         description: The secret key for Cube API authentication.
-      tokenPayload:
-        type: object
-        description: Payload data for JWT token generation.
   commandFunction:
     # A function that produces the CLI command to start the MCP on stdio.
     |-
