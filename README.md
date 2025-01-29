@@ -1,5 +1,7 @@
 # Snowflake Cube Server
 
+[![smithery badge](https://smithery.ai/badge/@isaacwasserman/mcp_cube_server)](https://smithery.ai/server/@isaacwasserman/mcp_cube_server)
+
 MCP Server for Interacting with Cube Semantic Layers
 
 ## Resources
