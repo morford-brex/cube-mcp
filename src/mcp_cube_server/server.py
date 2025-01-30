@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Annotated, Any, Literal, Optional, Union
 from mcp.server.fastmcp import FastMCP
+from mcp.types import TextContent, EmbeddedResource, TextResourceContents
 import jwt
 from pydantic import BaseModel, Field
 import requests
@@ -17,16 +18,15 @@ def data_to_yaml(data: Any) -> str:
 
 class CubeClient:
     Route = Literal["meta", "load"]
-    max_retries = 100
-    initial_wait_time = 1  # Initial wait time in seconds
-    max_wait_time = 32  # Maximum wait time in seconds
+    max_wait_time = 10
+    request_backoff = 1
 
-    def __init__(self, endpoint: str, api_secret: str, token_payload: dict):
+    def __init__(self, endpoint: str, api_secret: str, token_payload: dict, logger: logging.Logger):
         self.endpoint = endpoint
         self.api_secret = api_secret
         self.token_payload = token_payload
         self.token = None
-        self.logger = logging.getLogger("mcp_cube_server")
+        self.logger = logger
         self._refresh_token()
         self.meta = self.describe()
 
@@ -37,47 +37,37 @@ class CubeClient:
         self.token = self._generate_token()
 
     def _request(self, route: Route, **params):
-        retry_count = 0
-        wait_time = self.initial_wait_time
+        request_time = time.time()
+        headers = {"Authorization": self.token}
+        url = f"{self.endpoint if self.endpoint[-1] != '/' else self.endpoint[:-1]}/{route}"
+        serialized_params = {k: json.dumps(v) for k, v in params.items()}
 
-        while retry_count < self.max_retries:
-            headers = {"Authorization": self.token}
-            url = f"{self.endpoint if self.endpoint[-1] != '/' else self.endpoint[:-1]}/{route}"
-            serialized_params = {k: json.dumps(v) for k, v in params.items()}
+        try:
+            response = requests.get(url, headers=headers, params=serialized_params)
 
-            try:
+            # Handle "continue wait" responses
+            while response.json().get("error") == "Continue wait":
+                if time.time() - request_time > self.max_wait_time:
+                    self.logger.error(f"Request timed out after {self.max_wait_time} seconds")
+                    return {"error": "Request timed out. Something may have gone wrong or the request may be too complex."}
+                self.logger.warning(f"Request incomplete, polling again in {self.request_backoff} second(s)")
+                time.sleep(self.request_backoff)
                 response = requests.get(url, headers=headers, params=serialized_params)
 
-                if response.status_code == 200:
-                    return response.json()
+            # Handle 403 responses by trying to refresh the token once
+            if response.status_code == 403:
+                self.logger.warning("Received 403, attempting token refresh")
+                self._refresh_token()
+                return requests.get(url, headers=headers, params=serialized_params)
 
-                elif response.status_code == 400:
-                    if response.json().get("error") == "Continue wait":
-                        retry_count += 1
-                        self.logger.warning(f"Request attempt {retry_count} failed, retrying in {wait_time} seconds")
-                        time.sleep(wait_time)
-                        # Exponential backoff with maximum limit
-                        wait_time = min(wait_time * 2, self.max_wait_time)
-                        continue
+            if response.status_code != 200:
+                self.logger.error(f"Request failed with error: {str(response.json().get('error'))}")
 
-                elif response.status_code == 403:
-                    self._refresh_token()
-                    # Don't count this as a retry, just refresh token and try again
-                    continue
+            return response.json()
 
-                # For any other status code, return the response
-                return response.json()
-
-            except requests.exceptions.RequestException as e:
-                retry_count += 1
-                self.logger.error(f"Request failed with error: {str(e)}")
-                if retry_count >= self.max_retries:
-                    break
-                time.sleep(wait_time)
-                wait_time = min(wait_time * 2, self.max_wait_time)
-
-        self.logger.error("Max retries exceeded")
-        return {"error": "Request timeout"}
+        except Exception as e:
+            self.logger.error(f"Request failed with error: {str(e)}")
+            return {"error": f"Request failed: {str(e)}"}
 
     def describe(self):
         return self._request("meta")
@@ -110,60 +100,38 @@ class CubeClient:
         return response
 
 
+class Filter(BaseModel):
+    dimension: str = Field(..., description="Name of the time dimension")
+    granularity: Literal["second", "minute", "hour", "day", "week", "month", "quarter", "year"] = Field(
+        ..., description="Time granularity"
+    )
+    dateRange: Union[list[str], str] = Field(
+        ...,
+        description="Pair of dates ISO dates representing the start and end of the range. Alternatively, a string representing a relative date range of the form: 'last N days', 'today', 'yesterday', 'last year', etc.",
+    )
+
+    model_config = {"exclude_none": True}
+
+
+class TimeDimension(BaseModel):
+    dimension: str = Field(..., description="Name of the time dimension")
+    granularity: Literal["second", "minute", "hour", "day", "week", "month", "quarter", "year"] = Field(
+        ..., description="Time granularity"
+    )
+    dateRange: Union[list[str], str] = Field(
+        ...,
+        description="Pair of dates ISO dates representing the start and end of the range. Alternatively, a string representing a relative date range of the form: 'last N days', 'today', 'yesterday', 'last year', etc.",
+    )
+
+    model_config = {"exclude_none": True}
+
+
 class Query(BaseModel):
-    class Filter(BaseModel):
-        member: Optional[str] = Field(None, description="Name of the measure or dimension to filter on")
-        operator: Optional[
-            Literal[
-                "equals",
-                "notEquals",
-                "contains",
-                "notContains",
-                "startsWith",
-                "notStartsWith",
-                "endsWith",
-                "notEndsWith",
-                "gt",
-                "gte",
-                "lt",
-                "lte",
-                "set",
-                "notSet",
-                "inDateRange",
-                "notInDateRange",
-                "beforeDate",
-                "afterDate",
-                "measureFilter",
-            ]
-        ] = Field(None, description="Operator to apply to the filter")
-        values: Optional[list[Union[str, int, float]]] = Field(
-            None, description="Right-hand side of the filter. 0-n values depending on the operator"
-        )
-        or_filters: Optional[list["Filter"]] = Field(  # type: ignore  # noqa: F821
-            None, description="List of filters to combine with OR logic. If present, other fields are ignored", alias="or"
-        )
-        and_filters: Optional[list["Filter"]] = Field(  # type: ignore  # noqa: F821
-            None, description="List of filters to combine with AND logic. If present, other fields are ignored", alias="and"
-        )
-
-        model_config = {"exclude_none": True}
-
-    class TimeDimension(BaseModel):
-        dimension: str = Field(..., description="Name of the time dimension")
-        granularity: Literal["second", "minute", "hour", "day", "week", "month", "quarter", "year"] = Field(
-            ..., description="Time granularity"
-        )
-        dateRange: Union[list[str], str] = Field(
-            ...,
-            description="Pair of dates ISO dates representing the start and end of the range. Alternatively, a string representing a relative date range of the form: 'last N days', 'today', 'yesterday', 'last year', etc.",
-        )
-
-        model_config = {"exclude_none": True}
 
     measures: list[str] = Field([], description="Names of measures to query")
     dimensions: list[str] = Field([], description="Names of dimensions to group by")
     timeDimensions: list[TimeDimension] = Field([], description="Time dimensions to group by")
-    filters: list[Filter] = Field([], description="Filters to apply to the query")
+    # filters: list[Filter] = Field([], description="Filters to apply to the query")
     limit: Optional[int] = Field(500, description="Maximum number of rows to return. Defaults to 500")
     offset: Optional[int] = Field(0, description="Number of rows to skip. Defaults to 0")
     order: dict[str, Literal["asc", "desc"]] = Field(
@@ -177,11 +145,10 @@ class Query(BaseModel):
     model_config = {"exclude_none": True}
 
 
-def main(credentials):
-    logger = logging.getLogger("mcp_cube_server")
+def main(credentials, logger):
     mcp = FastMCP("Cube.dev")
 
-    client = CubeClient(**credentials)
+    client = CubeClient(**credentials, logger=logger)
 
     @mcp.resource("context://data_description")
     def data_description() -> str:
@@ -228,29 +195,43 @@ def main(credentials):
     @mcp.tool("read_data")
     def read_data(query: Query) -> str:
         """Read data from Cube."""
-        query_dict = query.model_dump(by_alias=True, exclude_none=True)
-        logger.info("read_data called with query: %s", json.dumps(query_dict))
-        response = client.query(query_dict)
-        if error := response.get("error"):
-            logger.error("Error in read_data: %s\n\n%s", error, response.get("stack"))
-            logger.error("Full response: %s", json.dumps(response))
-            return f"Error: {error}"
-        data = response.get("data", [])
-        logger.info("read_data returned %s rows", len(data))
+        try:
+            query_dict = query.model_dump(by_alias=True, exclude_none=True)
+            logger.info("read_data called with query: %s", json.dumps(query_dict))
+            response = client.query(query_dict)
+            if error := response.get("error"):
+                logger.error("Error in read_data: %s\n\n%s", error, response.get("stack"))
+                logger.error("Full response: %s", json.dumps(response))
+                return f"Error: {error}"
+            data = response.get("data", [])
+            logger.info("read_data returned %s rows", len(data))
 
-        data_id = str(uuid.uuid4())
+            data_id = str(uuid.uuid4())
 
-        @mcp.resource(f"data://{data_id}")
-        def data_resource() -> str:
-            return json.dumps(data)
+            @mcp.resource(f"data://{data_id}")
+            def data_resource() -> str:
+                return json.dumps(data)
 
-        logger.info("Added results as resource with ID: %s", data_id)
+            logger.info("Added results as resource with ID: %s", data_id)
 
-        output = {
-            "type": "data",
-            "data_id": data_id,
-            "data": data,
-        }
-        return json.dumps(output)
+            output = {
+                "type": "data",
+                "data_id": data_id,
+                "data": data,
+            }
+            yaml_output = data_to_yaml(output)
+            json_output = json.dumps(output)
+            return [
+                TextContent(type="text", text=yaml_output),
+                EmbeddedResource(
+                    type="resource",
+                    resource=TextResourceContents(uri=f"data://{data_id}", text=json_output, mimeType="application/json"),
+                ),
+            ]
 
+        except Exception as e:
+            logger.error("Error in read_data: %s", str(e))
+            return f"Error: {str(e)}"
+
+    logger.info("Starting Cube MCP server")
     mcp.run()

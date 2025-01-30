@@ -1,10 +1,12 @@
-from . import server
-import asyncio
 import argparse
-import dotenv
-import os
+import asyncio
 import json
 import logging
+import os
+
+import dotenv
+
+from . import server
 
 
 def args_to_kwargs(unknown):
@@ -28,8 +30,12 @@ def args_to_kwargs(unknown):
 def main():
     """Main entry point for the package."""
     parser = argparse.ArgumentParser(description="Cube MCP Server")
-    parser.add_argument("--log_dir", required=False, default=None, help="Directory to log to")
-    parser.add_argument("--log_level", required=False, default="INFO", help="Logging level")
+    parser.add_argument(
+        "--log_dir", required=False, default=None, help="Directory to log to"
+    )
+    parser.add_argument(
+        "--log_level", required=False, default="INFO", help="Logging level"
+    )
 
     dotenv.load_dotenv()
 
@@ -39,8 +45,14 @@ def main():
         "token_payload": os.getenv("CUBE_TOKEN_PAYLOAD", "{}"),
     }
 
-    parser.add_argument("--endpoint", required=not required["endpoint"], default=required["endpoint"])
-    parser.add_argument("--api_secret", required=not required["api_secret"], default=required["api_secret"])
+    parser.add_argument(
+        "--endpoint", required=not required["endpoint"], default=required["endpoint"]
+    )
+    parser.add_argument(
+        "--api_secret",
+        required=not required["api_secret"],
+        default=required["api_secret"],
+    )
 
     args, unknown = parser.parse_known_args()
     additional_kwargs = args_to_kwargs(unknown)
@@ -49,14 +61,22 @@ def main():
     for key, value in additional_kwargs.items():
         token_payload[key] = value
 
-    logging.basicConfig(
-        level=args.log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler()]
-        + ([logging.FileHandler(os.path.join(args.log_dir, "server.log"))] if args.log_dir else []),
+    logger = logging.getLogger(__name__)
+    logger.propagate = False
+    logger.setLevel(args.log_level)
+    console_handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
 
-    logger = logging.getLogger("mcp_cube_server")
+    if args.log_dir:
+        file_handler = logging.FileHandler(
+            os.path.join(args.log_dir, "mcp_cube_server.log")
+        )
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
     try:
         credentials = {
@@ -69,7 +89,8 @@ def main():
         return
 
     server.main(
-        credentials=credentials,
+        credentials,
+        logger,
     )
 
 
