@@ -11,7 +11,7 @@ import requests
 import yaml
 from mcp.server.fastmcp import FastMCP
 from mcp.types import EmbeddedResource, TextContent, TextResourceContents
-from pydantic import BaseModel, Field, AnyUrl
+from pydantic import AnyUrl, BaseModel, Field
 
 
 def data_to_yaml(data: Any) -> str:
