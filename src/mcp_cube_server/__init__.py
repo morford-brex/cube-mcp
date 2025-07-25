@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 import json
 import logging
 import os
@@ -30,12 +29,8 @@ def args_to_kwargs(unknown):
 def main():
     """Main entry point for the package."""
     parser = argparse.ArgumentParser(description="Cube MCP Server")
-    parser.add_argument(
-        "--log_dir", required=False, default=None, help="Directory to log to"
-    )
-    parser.add_argument(
-        "--log_level", required=False, default="INFO", help="Logging level"
-    )
+    parser.add_argument("--log_dir", required=False, default=None, help="Directory to log to")
+    parser.add_argument("--log_level", required=False, default="INFO", help="Logging level")
 
     dotenv.load_dotenv()
 
@@ -65,16 +60,12 @@ def main():
     logger.propagate = False
     logger.setLevel(args.log_level)
     console_handler = logging.StreamHandler()
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
     if args.log_dir:
-        file_handler = logging.FileHandler(
-            os.path.join(args.log_dir, "mcp_cube_server.log")
-        )
+        file_handler = logging.FileHandler(os.path.join(args.log_dir, "mcp_cube_server.log"))
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 

@@ -1,7 +1,7 @@
 """Common test fixtures and configuration."""
 
-import json
-from typing import Any, Dict, Generator
+from collections.abc import Generator
+from typing import Any
 
 import pytest
 import responses
@@ -23,13 +23,13 @@ def mock_api_secret() -> str:
 
 
 @pytest.fixture
-def mock_token_payload() -> Dict[str, Any]:
+def mock_token_payload() -> dict[str, Any]:
     """Mock JWT token payload."""
     return {"user_id": "test-user", "role": "admin"}
 
 
 @pytest.fixture
-def mock_meta_response() -> Dict[str, Any]:
+def mock_meta_response() -> dict[str, Any]:
     """Mock Cube.dev meta API response."""
     return {
         "cubes": [
@@ -77,7 +77,7 @@ def mock_meta_response() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def mock_query_response() -> Dict[str, Any]:
+def mock_query_response() -> dict[str, Any]:
     """Mock Cube.dev query response."""
     return {
         "data": [
@@ -104,9 +104,9 @@ def mock_logger(mocker) -> Any:
 def cube_client(
     mock_cube_endpoint: str,
     mock_api_secret: str,
-    mock_token_payload: Dict[str, Any],
+    mock_token_payload: dict[str, Any],
     mock_logger: Any,
-    mock_meta_response: Dict[str, Any],
+    mock_meta_response: dict[str, Any],
 ) -> Generator[CubeClient, None, None]:
     """Create a CubeClient instance with mocked responses."""
     with responses.RequestsMock() as rsps:
@@ -117,14 +117,14 @@ def cube_client(
             json=mock_meta_response,
             status=200,
         )
-        
+
         client = CubeClient(
             endpoint=mock_cube_endpoint,
             api_secret=mock_api_secret,
             token_payload=mock_token_payload,
             logger=mock_logger,
         )
-        
+
         yield client
 
 
@@ -135,7 +135,7 @@ def mcp_server() -> FastMCP:
 
 
 @pytest.fixture
-def mock_error_response() -> Dict[str, Any]:
+def mock_error_response() -> dict[str, Any]:
     """Mock error response from Cube.dev."""
     return {
         "error": "Query execution error",
@@ -144,6 +144,6 @@ def mock_error_response() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def mock_continue_wait_response() -> Dict[str, Any]:
+def mock_continue_wait_response() -> dict[str, Any]:
     """Mock 'continue wait' response from Cube.dev."""
     return {"error": "Continue wait"}

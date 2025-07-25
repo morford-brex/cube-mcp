@@ -16,7 +16,7 @@ class TestTimeDimension:
             granularity="day",
             dateRange=["2024-01-01", "2024-01-31"],
         )
-        
+
         assert td.dimension == "Orders.created_at"
         assert td.granularity == "day"
         assert td.dateRange == ["2024-01-01", "2024-01-31"]
@@ -28,7 +28,7 @@ class TestTimeDimension:
             granularity="month",
             dateRange="last 7 days",
         )
-        
+
         assert td.dateRange == "last 7 days"
 
     def test_invalid_granularity(self) -> None:
@@ -39,14 +39,14 @@ class TestTimeDimension:
                 granularity="invalid",  # type: ignore
                 dateRange=["2024-01-01", "2024-01-31"],
             )
-        
+
         assert "Input should be" in str(exc_info.value)
 
     def test_missing_required_fields(self) -> None:
         """Test TimeDimension with missing required fields."""
         with pytest.raises(ValidationError) as exc_info:
             TimeDimension()  # type: ignore
-        
+
         errors = exc_info.value.errors()
         assert len(errors) == 3  # dimension, granularity, dateRange
 
@@ -57,7 +57,7 @@ class TestTimeDimension:
             granularity="day",
             dateRange=["2024-01-01", "2024-01-31"],
         )
-        
+
         dumped = td.model_dump()
         assert None not in dumped.values()
 
@@ -72,7 +72,7 @@ class TestFilter:
             granularity="day",
             dateRange=["2024-01-01", "2024-01-31"],
         )
-        
+
         assert f.dimension == "Orders.status"
         assert f.granularity == "day"
         assert f.dateRange == ["2024-01-01", "2024-01-31"]
@@ -82,7 +82,7 @@ class TestFilter:
         # Both should have same fields and validation
         filter_fields = set(Filter.model_fields.keys())
         time_dim_fields = set(TimeDimension.model_fields.keys())
-        
+
         assert filter_fields == time_dim_fields
 
 
@@ -96,7 +96,7 @@ class TestQuery:
             granularity="day",
             dateRange=["2024-01-01", "2024-01-31"],
         )
-        
+
         query = Query(
             measures=["Orders.count", "Orders.total_amount"],
             dimensions=["Orders.status"],
@@ -106,7 +106,7 @@ class TestQuery:
             order={"Orders.count": "desc"},
             ungrouped=False,
         )
-        
+
         assert query.measures == ["Orders.count", "Orders.total_amount"]
         assert query.dimensions == ["Orders.status"]
         assert len(query.timeDimensions) == 1
@@ -118,7 +118,7 @@ class TestQuery:
     def test_query_with_defaults(self) -> None:
         """Test Query with default values."""
         query = Query()
-        
+
         assert query.measures == []
         assert query.dimensions == []
         assert query.timeDimensions == []
@@ -133,9 +133,9 @@ class TestQuery:
             measures=["Orders.count"],
             dimensions=["Orders.status"],
         )
-        
+
         dumped = query.model_dump(exclude_none=True)
-        
+
         # Should only include non-default values
         assert "measures" in dumped
         assert "dimensions" in dumped
@@ -145,10 +145,8 @@ class TestQuery:
 
     def test_query_order_validation(self) -> None:
         """Test Query order field validation."""
-        query = Query(
-            order={"Orders.count": "asc", "Orders.total_amount": "desc"}
-        )
-        
+        query = Query(order={"Orders.count": "asc", "Orders.total_amount": "desc"})
+
         assert query.order["Orders.count"] == "asc"
         assert query.order["Orders.total_amount"] == "desc"
 
@@ -156,7 +154,7 @@ class TestQuery:
         """Test Query with invalid order direction."""
         with pytest.raises(ValidationError) as exc_info:
             Query(order={"Orders.count": "invalid"})  # type: ignore
-        
+
         assert "Input should be" in str(exc_info.value)
 
     def test_query_with_multiple_time_dimensions(self) -> None:
@@ -171,9 +169,9 @@ class TestQuery:
             granularity="hour",
             dateRange="today",
         )
-        
+
         query = Query(timeDimensions=[td1, td2])
-        
+
         assert len(query.timeDimensions) == 2
         assert query.timeDimensions[0].dimension == "Orders.created_at"
         assert query.timeDimensions[1].dimension == "Orders.updated_at"
@@ -184,10 +182,10 @@ class TestQuery:
             measures=["Orders.count"],
             limit=10,
         )
-        
+
         # The model should serialize properly with by_alias
         dumped = query.model_dump(by_alias=True, exclude_none=True)
-        
+
         assert "measures" in dumped
         assert "limit" in dumped
         assert dumped["limit"] == 10

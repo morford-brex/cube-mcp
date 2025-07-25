@@ -1,15 +1,17 @@
 from __future__ import annotations
-from typing import Any, Literal, Optional, Union
-from mcp.server.fastmcp import FastMCP
-from mcp.types import TextContent, EmbeddedResource, TextResourceContents
-import jwt
-from pydantic import BaseModel, Field
-import requests
+
 import json
 import logging
-import yaml
-import uuid
 import time
+import uuid
+from typing import Any, Literal
+
+import jwt
+import requests
+import yaml
+from mcp.server.fastmcp import FastMCP
+from mcp.types import EmbeddedResource, TextContent, TextResourceContents
+from pydantic import BaseModel, Field
 
 
 def data_to_yaml(data: Any) -> str:
@@ -49,8 +51,12 @@ class CubeClient:
             while response.json().get("error") == "Continue wait":
                 if time.time() - request_time > self.max_wait_time:
                     self.logger.error(f"Request timed out after {self.max_wait_time} seconds")
-                    return {"error": "Request timed out. Something may have gone wrong or the request may be too complex."}
-                self.logger.warning(f"Request incomplete, polling again in {self.request_backoff} second(s)")
+                    return {
+                        "error": "Request timed out. Something may have gone wrong or the request may be too complex."
+                    }
+                self.logger.warning(
+                    f"Request incomplete, polling again in {self.request_backoff} second(s)"
+                )
                 time.sleep(self.request_backoff)
                 response = requests.get(url, headers=headers, params=serialized_params)
 
@@ -77,7 +83,8 @@ class CubeClient:
             # Find which keys are numeric
             numeric_keys = set()
             dimensions_and_measures = dict(
-                response["annotation"].get("dimensions", {}), **response["annotation"].get("measures", [])
+                response["annotation"].get("dimensions", {}),
+                **response["annotation"].get("measures", []),
             )
             for column_name, column in dimensions_and_measures.items():
                 if column.get("type") == "number":
@@ -102,10 +109,10 @@ class CubeClient:
 
 class Filter(BaseModel):
     dimension: str = Field(..., description="Name of the time dimension")
-    granularity: Literal["second", "minute", "hour", "day", "week", "month", "quarter", "year"] = Field(
-        ..., description="Time granularity"
+    granularity: Literal["second", "minute", "hour", "day", "week", "month", "quarter", "year"] = (
+        Field(..., description="Time granularity")
     )
-    dateRange: Union[list[str], str] = Field(
+    dateRange: list[str] | str = Field(
         ...,
         description="Pair of dates ISO dates representing the start and end of the range. Alternatively, a string representing a relative date range of the form: 'last N days', 'today', 'yesterday', 'last year', etc.",
     )
@@ -115,10 +122,10 @@ class Filter(BaseModel):
 
 class TimeDimension(BaseModel):
     dimension: str = Field(..., description="Name of the time dimension")
-    granularity: Literal["second", "minute", "hour", "day", "week", "month", "quarter", "year"] = Field(
-        ..., description="Time granularity"
+    granularity: Literal["second", "minute", "hour", "day", "week", "month", "quarter", "year"] = (
+        Field(..., description="Time granularity")
     )
-    dateRange: Union[list[str], str] = Field(
+    dateRange: list[str] | str = Field(
         ...,
         description="Pair of dates ISO dates representing the start and end of the range. Alternatively, a string representing a relative date range of the form: 'last N days', 'today', 'yesterday', 'last year', etc.",
     )
@@ -127,15 +134,15 @@ class TimeDimension(BaseModel):
 
 
 class Query(BaseModel):
-
     measures: list[str] = Field([], description="Names of measures to query")
     dimensions: list[str] = Field([], description="Names of dimensions to group by")
     timeDimensions: list[TimeDimension] = Field([], description="Time dimensions to group by")
     # filters: list[Filter] = Field([], description="Filters to apply to the query")
-    limit: Optional[int] = Field(500, description="Maximum number of rows to return. Defaults to 500")
-    offset: Optional[int] = Field(0, description="Number of rows to skip. Defaults to 0")
+    limit: int | None = Field(500, description="Maximum number of rows to return. Defaults to 500")
+    offset: int | None = Field(0, description="Number of rows to skip. Defaults to 0")
     order: dict[str, Literal["asc", "desc"]] = Field(
-        {}, description="Optional ordering of the results. The order is sensitive to the order of keys."
+        {},
+        description="Optional ordering of the results. The order is sensitive to the order of keys.",
     )
     ungrouped: bool = Field(
         False,
@@ -183,8 +190,9 @@ def main(credentials, logger):
             }
             for cube in meta.get("cubes", [])
         ]
-        return "Here is a description of the data available via the read_data tool:\n\n" + yaml.dump(
-            description, indent=2, sort_keys=True
+        return (
+            "Here is a description of the data available via the read_data tool:\n\n"
+            + yaml.dump(description, indent=2, sort_keys=True)
         )
 
     @mcp.tool("describe_data")
@@ -225,7 +233,9 @@ def main(credentials, logger):
                 TextContent(type="text", text=yaml_output),
                 EmbeddedResource(
                     type="resource",
-                    resource=TextResourceContents(uri=f"data://{data_id}", text=json_output, mimeType="application/json"),
+                    resource=TextResourceContents(
+                        uri=f"data://{data_id}", text=json_output, mimeType="application/json"
+                    ),
                 ),
             ]
 
