@@ -11,7 +11,7 @@ import requests
 import yaml
 from mcp.server.fastmcp import FastMCP
 from mcp.types import EmbeddedResource, TextContent, TextResourceContents
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, AnyUrl
 
 
 def data_to_yaml(data: Any) -> str:
@@ -238,7 +238,7 @@ def main(credentials: dict[str, Any], logger: logging.Logger) -> None:
                 EmbeddedResource(
                     type="resource",
                     resource=TextResourceContents(
-                        uri=HttpUrl(f"data://{data_id}"), text=json_output, mimeType="application/json"
+                        uri=AnyUrl(f"data://{data_id}"), text=json_output, mimeType="application/json"
                     ),
                 ),
             ]
