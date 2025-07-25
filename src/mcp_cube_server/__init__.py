@@ -52,11 +52,6 @@ def main() -> None:
     args, unknown = parser.parse_known_args()
     additional_kwargs = args_to_kwargs(unknown)
 
-    token_payload_str = required["token_payload"] or "{}"
-    token_payload = json.loads(token_payload_str)
-    for key, value in additional_kwargs.items():
-        token_payload[key] = value
-
     logger = logging.getLogger(__name__)
     logger.propagate = False
     logger.setLevel(args.log_level)
@@ -71,13 +66,18 @@ def main() -> None:
         logger.addHandler(file_handler)
 
     try:
+        token_payload_str = required["token_payload"] or "{}"
+        token_payload = json.loads(token_payload_str)
+        for key, value in additional_kwargs.items():
+            token_payload[key] = value
+
         credentials = {
             "endpoint": args.endpoint,
             "api_secret": args.api_secret,
             "token_payload": token_payload,
         }
     except json.JSONDecodeError:
-        logger.error("Invalid JSON in token_payload: %s", args.token_payload)
+        logger.error("Invalid JSON in token_payload: %s", token_payload_str)
         return
 
     server.main(

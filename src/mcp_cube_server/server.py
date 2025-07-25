@@ -45,7 +45,7 @@ class CubeClient:
         serialized_params = {k: json.dumps(v) for k, v in params.items()}
 
         try:
-            response = requests.get(url, headers=headers, params=serialized_params)
+            response = requests.get(url, headers=headers, params=serialized_params, timeout=(5, 10))
 
             # Handle "continue wait" responses
             while response.json().get("error") == "Continue wait":
@@ -58,14 +58,14 @@ class CubeClient:
                     f"Request incomplete, polling again in {self.request_backoff} second(s)"
                 )
                 time.sleep(self.request_backoff)
-                response = requests.get(url, headers=headers, params=serialized_params)
+                response = requests.get(url, headers=headers, params=serialized_params, timeout=(5, 10))
 
             # Handle 403 responses by trying to refresh the token once
             if response.status_code == 403:
                 self.logger.warning("Received 403, attempting token refresh")
                 self._refresh_token()
                 headers = {"Authorization": self.token}
-                resp = requests.get(url, headers=headers, params=serialized_params)
+                resp = requests.get(url, headers=headers, params=serialized_params, timeout=(5, 10))
                 result2: dict[str, Any] = resp.json()
                 return result2
 
@@ -121,8 +121,7 @@ class Filter(BaseModel):
         description="Pair of dates ISO dates representing the start and end of the range. Alternatively, a string representing a relative date range of the form: 'last N days', 'today', 'yesterday', 'last year', etc.",
     )
 
-    class Config:
-        extra = "forbid"
+    model_config = {"extra": "forbid"}
 
 
 class TimeDimension(BaseModel):
@@ -135,8 +134,7 @@ class TimeDimension(BaseModel):
         description="Pair of dates ISO dates representing the start and end of the range. Alternatively, a string representing a relative date range of the form: 'last N days', 'today', 'yesterday', 'last year', etc.",
     )
 
-    class Config:
-        extra = "forbid"
+    model_config = {"extra": "forbid"}
 
 
 class Query(BaseModel):
@@ -155,8 +153,7 @@ class Query(BaseModel):
         description="Return results without grouping by dimensions. Instead, return all rows. This can be useful for fetching a single row by its ID as well.",
     )
 
-    class Config:
-        extra = "forbid"
+    model_config = {"extra": "forbid"}
 
 
 def main(credentials: dict[str, Any], logger: logging.Logger) -> None:

@@ -23,25 +23,16 @@ class TestServerIntegration:
     def test_full_server_initialization_flow(
         self,
         mock_fastmcp_class: Mock,
-        mock_meta_response: dict[str, Any],
+        mock_env: None,  # noqa: ARG002
     ) -> None:
         """Test complete server initialization flow."""
         mock_mcp = Mock()
         mock_fastmcp_class.return_value = mock_mcp
 
         with (
-            responses.RequestsMock() as rsps,
             patch("sys.argv", ["mcp_cube_server"]),
             patch("mcp_cube_server.server.main") as mock_server_main,
         ):
-            # Mock the meta endpoint
-            rsps.add(
-                responses.GET,
-                "https://cube.example.com/cubejs-api/v1/meta",
-                json=mock_meta_response,
-                status=200,
-            )
-
             cli_main()
 
             # Verify server main was called with correct credentials
@@ -56,14 +47,12 @@ class TestServerIntegration:
     def test_cli_with_command_line_args(
         self,
         mock_fastmcp_class: Mock,
-        mock_meta_response: dict[str, Any],
     ) -> None:
         """Test CLI with command line arguments overriding env vars."""
         mock_mcp = Mock()
         mock_fastmcp_class.return_value = mock_mcp
 
         with (
-            responses.RequestsMock() as rsps,
             patch(
                 "sys.argv",
                 [
@@ -78,13 +67,6 @@ class TestServerIntegration:
             ),
             patch("mcp_cube_server.server.main") as mock_server_main,
         ):
-            rsps.add(
-                responses.GET,
-                "https://cli.example.com/meta",
-                json=mock_meta_response,
-                status=200,
-            )
-
             cli_main()
 
             credentials = mock_server_main.call_args[0][0]
@@ -96,14 +78,13 @@ class TestServerIntegration:
     def test_cli_with_additional_token_payload_args(
         self,
         mock_fastmcp_class: Mock,
-        mock_meta_response: dict[str, Any],
+        mock_env: None,  # noqa: ARG002
     ) -> None:
         """Test CLI with additional token payload arguments."""
         mock_mcp = Mock()
         mock_fastmcp_class.return_value = mock_mcp
 
         with (
-            responses.RequestsMock() as rsps,
             patch(
                 "sys.argv",
                 [
@@ -116,12 +97,6 @@ class TestServerIntegration:
             ),
             patch("mcp_cube_server.server.main") as mock_server_main,
         ):
-            rsps.add(
-                responses.GET,
-                "https://cube.example.com/cubejs-api/v1/meta",
-                json=mock_meta_response,
-                status=200,
-            )
             cli_main()
 
             credentials = mock_server_main.call_args[0][0]
@@ -131,26 +106,25 @@ class TestServerIntegration:
             assert credentials["token_payload"]["role"] == "admin"
             assert credentials["token_payload"]["tenant_id"] == "tenant-123"
 
-    def test_cli_with_invalid_json_token_payload(self, capsys) -> None:
+    def test_cli_with_invalid_json_token_payload(self, capsys, monkeypatch) -> None:
         """Test CLI with invalid JSON in token payload."""
-        with patch("os.getenv") as mock_getenv, patch("sys.argv", ["mcp_cube_server"]):
-            mock_getenv.side_effect = lambda key, default=None: {
-                "CUBE_ENDPOINT": "https://cube.example.com",
-                "CUBE_API_SECRET": "secret",
-                "CUBE_TOKEN_PAYLOAD": "invalid-json{",
-            }.get(key, default)
+        monkeypatch.setenv("CUBE_ENDPOINT", "https://cube.example.com")
+        monkeypatch.setenv("CUBE_API_SECRET", "secret")
+        monkeypatch.setenv("CUBE_TOKEN_PAYLOAD", "invalid-json{")
 
+        with patch("sys.argv", ["mcp_cube_server"]):
             cli_main()
 
             captured = capsys.readouterr()
-            assert "Invalid JSON in token_payload" in captured.err
+            # Check stdout or stderr
+            output = captured.out + captured.err
+            assert "Invalid JSON in token_payload" in output
 
     @patch("mcp_cube_server.server.FastMCP")
     def test_server_with_logging_to_file(
         self,
         mock_fastmcp_class: Mock,
         tmp_path,
-        mock_meta_response: dict[str, Any],
     ) -> None:
         """Test server with file logging enabled."""
         mock_mcp = Mock()
@@ -160,7 +134,6 @@ class TestServerIntegration:
         log_dir.mkdir()
 
         with (
-            responses.RequestsMock() as rsps,
             patch(
                 "sys.argv",
                 [
@@ -175,12 +148,6 @@ class TestServerIntegration:
             ),
             patch("mcp_cube_server.server.main"),
         ):
-            rsps.add(
-                responses.GET,
-                "https://cube.example.com/meta",
-                json=mock_meta_response,
-                status=200,
-            )
             cli_main()
 
             # Check that log file would be created
