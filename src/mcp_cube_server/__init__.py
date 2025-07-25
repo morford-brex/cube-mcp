@@ -8,8 +8,8 @@ import dotenv
 from . import server
 
 
-def args_to_kwargs(unknown):
-    extras = {}
+def args_to_kwargs(unknown: list[str]) -> dict[str, str | bool]:
+    extras: dict[str, str | bool] = {}
     i = 0
     while i < len(unknown):
         if unknown[i].startswith("--"):
@@ -26,7 +26,7 @@ def args_to_kwargs(unknown):
     return extras
 
 
-def main():
+def main() -> None:
     """Main entry point for the package."""
     parser = argparse.ArgumentParser(description="Cube MCP Server")
     parser.add_argument("--log_dir", required=False, default=None, help="Directory to log to")
@@ -52,7 +52,8 @@ def main():
     args, unknown = parser.parse_known_args()
     additional_kwargs = args_to_kwargs(unknown)
 
-    token_payload = json.loads(required["token_payload"])
+    token_payload_str = required["token_payload"] or "{}"
+    token_payload = json.loads(token_payload_str)
     for key, value in additional_kwargs.items():
         token_payload[key] = value
 

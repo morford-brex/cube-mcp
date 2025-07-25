@@ -11,7 +11,7 @@ import requests
 import yaml
 from mcp.server.fastmcp import FastMCP
 from mcp.types import EmbeddedResource, TextContent, TextResourceContents
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 
 
 def data_to_yaml(data: Any) -> str:
@@ -23,22 +23,22 @@ class CubeClient:
     max_wait_time = 10
     request_backoff = 1
 
-    def __init__(self, endpoint: str, api_secret: str, token_payload: dict, logger: logging.Logger):
+    def __init__(self, endpoint: str, api_secret: str, token_payload: dict[str, Any], logger: logging.Logger) -> None:
         self.endpoint = endpoint
         self.api_secret = api_secret
         self.token_payload = token_payload
-        self.token = None
+        self.token: str | None = None
         self.logger = logger
         self._refresh_token()
         self.meta = self.describe()
 
-    def _generate_token(self):
+    def _generate_token(self) -> str:
         return jwt.encode(self.token_payload, self.api_secret, algorithm="HS256")
 
-    def _refresh_token(self):
+    def _refresh_token(self) -> None:
         self.token = self._generate_token()
 
-    def _request(self, route: Route, **params):
+    def _request(self, route: Route, **params: Any) -> dict[str, Any]:
         request_time = time.time()
         headers = {"Authorization": self.token}
         url = f"{self.endpoint if self.endpoint[-1] != '/' else self.endpoint[:-1]}/{route}"
@@ -64,21 +64,25 @@ class CubeClient:
             if response.status_code == 403:
                 self.logger.warning("Received 403, attempting token refresh")
                 self._refresh_token()
-                return requests.get(url, headers=headers, params=serialized_params)
+                headers = {"Authorization": self.token}
+                resp = requests.get(url, headers=headers, params=serialized_params)
+                result2: dict[str, Any] = resp.json()
+                return result2
 
             if response.status_code != 200:
                 self.logger.error(f"Request failed with error: {str(response.json().get('error'))}")
 
-            return response.json()
+            result: dict[str, Any] = response.json()
+            return result
 
         except Exception as e:
             self.logger.error(f"Request failed with error: {str(e)}")
             return {"error": f"Request failed: {str(e)}"}
 
-    def describe(self):
+    def describe(self) -> dict[str, Any]:
         return self._request("meta")
 
-    def _cast_numerics(self, response):
+    def _cast_numerics(self, response: dict[str, Any]) -> dict[str, Any]:
         if response.get("data") and response.get("annotation"):
             # Find which keys are numeric
             numeric_keys = set()
@@ -100,7 +104,7 @@ class CubeClient:
                         pass
         return response
 
-    def query(self, query, cast_numerics=True):
+    def query(self, query: dict[str, Any], cast_numerics: bool = True) -> dict[str, Any]:
         response = self._request("load", query=query)
         if cast_numerics:
             response = self._cast_numerics(response)
@@ -117,7 +121,8 @@ class Filter(BaseModel):
         description="Pair of dates ISO dates representing the start and end of the range. Alternatively, a string representing a relative date range of the form: 'last N days', 'today', 'yesterday', 'last year', etc.",
     )
 
-    model_config = {"exclude_none": True}
+    class Config:
+        extra = "forbid"
 
 
 class TimeDimension(BaseModel):
@@ -130,14 +135,15 @@ class TimeDimension(BaseModel):
         description="Pair of dates ISO dates representing the start and end of the range. Alternatively, a string representing a relative date range of the form: 'last N days', 'today', 'yesterday', 'last year', etc.",
     )
 
-    model_config = {"exclude_none": True}
+    class Config:
+        extra = "forbid"
 
 
 class Query(BaseModel):
     measures: list[str] = Field([], description="Names of measures to query")
     dimensions: list[str] = Field([], description="Names of dimensions to group by")
     timeDimensions: list[TimeDimension] = Field([], description="Time dimensions to group by")
-    # filters: list[Filter] = Field([], description="Filters to apply to the query")
+    # filters: List[Filter] = Field([], description="Filters to apply to the query")
     limit: int | None = Field(500, description="Maximum number of rows to return. Defaults to 500")
     offset: int | None = Field(0, description="Number of rows to skip. Defaults to 0")
     order: dict[str, Literal["asc", "desc"]] = Field(
@@ -149,10 +155,11 @@ class Query(BaseModel):
         description="Return results without grouping by dimensions. Instead, return all rows. This can be useful for fetching a single row by its ID as well.",
     )
 
-    model_config = {"exclude_none": True}
+    class Config:
+        extra = "forbid"
 
 
-def main(credentials, logger):
+def main(credentials: dict[str, Any], logger: logging.Logger) -> None:
     mcp = FastMCP("Cube.dev")
 
     client = CubeClient(**credentials, logger=logger)
@@ -196,12 +203,12 @@ def main(credentials, logger):
         )
 
     @mcp.tool("describe_data")
-    def describe_data() -> str:
+    def describe_data() -> dict[str, str]:
         """Describe the data available in Cube."""
         return {"type": "text", "text": data_description()}
 
     @mcp.tool("read_data")
-    def read_data(query: Query) -> str:
+    def read_data(query: Query) -> str | list[TextContent | EmbeddedResource]:
         """Read data from Cube."""
         try:
             query_dict = query.model_dump(by_alias=True, exclude_none=True)
@@ -234,7 +241,7 @@ def main(credentials, logger):
                 EmbeddedResource(
                     type="resource",
                     resource=TextResourceContents(
-                        uri=f"data://{data_id}", text=json_output, mimeType="application/json"
+                        uri=HttpUrl(f"data://{data_id}"), text=json_output, mimeType="application/json"
                     ),
                 ),
             ]
