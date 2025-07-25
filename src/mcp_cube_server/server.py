@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Annotated, Any, Literal, Optional, Union
+from typing import Any, Literal, Optional, Union
 from mcp.server.fastmcp import FastMCP
 from mcp.types import TextContent, EmbeddedResource, TextResourceContents
 import jwt
