@@ -23,7 +23,9 @@ class CubeClient:
     max_wait_time = 10
     request_backoff = 1
 
-    def __init__(self, endpoint: str, api_secret: str, token_payload: dict[str, Any], logger: logging.Logger) -> None:
+    def __init__(
+        self, endpoint: str, api_secret: str, token_payload: dict[str, Any], logger: logging.Logger
+    ) -> None:
         self.endpoint = endpoint
         self.api_secret = api_secret
         self.token_payload = token_payload
@@ -58,7 +60,9 @@ class CubeClient:
                     f"Request incomplete, polling again in {self.request_backoff} second(s)"
                 )
                 time.sleep(self.request_backoff)
-                response = requests.get(url, headers=headers, params=serialized_params, timeout=(5, 10))
+                response = requests.get(
+                    url, headers=headers, params=serialized_params, timeout=(5, 10)
+                )
 
             # Handle 403 responses by trying to refresh the token once
             if response.status_code == 403:
@@ -111,7 +115,7 @@ class CubeClient:
         return response
 
 
-class Filter(BaseModel):
+class TimeFilter(BaseModel):
     dimension: str = Field(..., description="Name of the time dimension")
     granularity: Literal["second", "minute", "hour", "day", "week", "month", "quarter", "year"] = (
         Field(..., description="Time granularity")
@@ -119,6 +123,36 @@ class Filter(BaseModel):
     dateRange: list[str] | str = Field(
         ...,
         description="Pair of dates ISO dates representing the start and end of the range. Alternatively, a string representing a relative date range of the form: 'last N days', 'today', 'yesterday', 'last year', etc.",
+    )
+
+    model_config = {"extra": "forbid"}
+
+
+class FilterValue(BaseModel):
+    member: str = Field(..., description="Member to filter on")
+    values: list[str] = Field(..., description="Values to include in the filter")
+
+    model_config = {"extra": "forbid"}
+
+
+class Filter(BaseModel):
+    member: str = Field(..., description="Member to filter on")
+    operator: Literal[
+        "equals",
+        "notEquals",
+        "contains",
+        "notContains",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "inDateRange",
+        "notInDateRange",
+        "beforeDate",
+        "afterDate",
+    ] = Field("equals", description="Filter operator")
+    values: list[str] | list[int] | list[float] | list[bool] | None = Field(
+        None, description="Values for the filter"
     )
 
     model_config = {"extra": "forbid"}
@@ -141,7 +175,7 @@ class Query(BaseModel):
     measures: list[str] = Field([], description="Names of measures to query")
     dimensions: list[str] = Field([], description="Names of dimensions to group by")
     timeDimensions: list[TimeDimension] = Field([], description="Time dimensions to group by")
-    # filters: List[Filter] = Field([], description="Filters to apply to the query")
+    filters: list[Filter] = Field([], description="Filters to apply to the query")
     limit: int | None = Field(500, description="Maximum number of rows to return. Defaults to 500")
     offset: int | None = Field(0, description="Number of rows to skip. Defaults to 0")
     order: dict[str, Literal["asc", "desc"]] = Field(
@@ -238,7 +272,9 @@ def main(credentials: dict[str, Any], logger: logging.Logger) -> None:
                 EmbeddedResource(
                     type="resource",
                     resource=TextResourceContents(
-                        uri=AnyUrl(f"data://{data_id}"), text=json_output, mimeType="application/json"
+                        uri=AnyUrl(f"data://{data_id}"),
+                        text=json_output,
+                        mimeType="application/json",
                     ),
                 ),
             ]
