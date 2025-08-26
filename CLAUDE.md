@@ -79,7 +79,7 @@ docker run -e CUBE_ENDPOINT="https://your-cube-endpoint.com" -e CUBE_API_SECRET=
 
 ## Architecture
 
-The cube-mcp repository implements a Model-Client-Provider (MCP) server that interfaces with Cube.dev semantic layers. The architecture consists of:
+The cube-mcp repository implements a Model Context Protocol (MCP) server that interfaces with Cube.dev semantic layers. The architecture consists of:
 
 ### Core Components
 
