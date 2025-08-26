@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from mcp_cube_server.server import Filter, Query, TimeDimension
+from mcp_cube_server.server import Filter, Query, TimeDimension, TimeFilter
 
 
 class TestTimeDimension:
@@ -68,22 +68,64 @@ class TestFilter:
     def test_valid_filter(self) -> None:
         """Test creating a valid Filter."""
         f = Filter(
-            dimension="Orders.status",
+            member="Orders.status",
+            operator="equals",
+            values=["shipped", "processing"],
+        )
+
+        assert f.member == "Orders.status"
+        assert f.operator == "equals"
+        assert f.values == ["shipped", "processing"]
+
+    def test_filter_with_different_operators(self) -> None:
+        """Test Filter with different operators."""
+        # Test contains operator
+        f1 = Filter(member="Orders.status", operator="contains", values=["ship"])
+        assert f1.operator == "contains"
+
+        # Test gt operator with numeric values
+        f2 = Filter(member="Orders.total", operator="gt", values=[100])
+        assert f2.operator == "gt"
+        assert f2.values == [100]
+
+    def test_filter_default_operator(self) -> None:
+        """Test Filter with default operator."""
+        f = Filter(member="Orders.status", values=["shipped"])
+        assert f.operator == "equals"  # Default value
+
+    def test_filter_without_values(self) -> None:
+        """Test Filter without values (for certain operators)."""
+        f = Filter(member="Orders.status")
+        assert f.values is None
+
+    def test_filter_invalid_operator(self) -> None:
+        """Test Filter with invalid operator."""
+        with pytest.raises(ValidationError):
+            Filter(member="Orders.status", operator="invalid")  # type: ignore
+
+
+class TestTimeFilter:
+    """Test cases for TimeFilter model."""
+
+    def test_valid_time_filter(self) -> None:
+        """Test creating a valid TimeFilter."""
+        f = TimeFilter(
+            dimension="Orders.created_at",
             granularity="day",
             dateRange=["2024-01-01", "2024-01-31"],
         )
 
-        assert f.dimension == "Orders.status"
+        assert f.dimension == "Orders.created_at"
         assert f.granularity == "day"
         assert f.dateRange == ["2024-01-01", "2024-01-31"]
 
-    def test_filter_equals_time_dimension(self) -> None:
-        """Test that Filter has same structure as TimeDimension."""
+    def test_time_filter_equals_time_dimension(self) -> None:
+        """Test that TimeFilter has same structure as TimeDimension."""
         # Both should have same fields and validation
-        filter_fields = set(Filter.model_fields.keys())
+        time_filter_fields = set(TimeFilter.model_fields.keys())
         time_dim_fields = set(TimeDimension.model_fields.keys())
 
-        assert filter_fields == time_dim_fields
+        assert time_filter_fields == time_dim_fields
 
 
 class TestQuery:
