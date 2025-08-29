@@ -138,6 +138,31 @@ docker run -e CUBE_ENDPOINT="https://your-cube.com" \
            mcp-cube-server
 ```
 
+## Claude Code Usage
+
+To use this MCP server with Claude Code, you need to add it to your MCP configuration.
+
+First, build the Docker image locally:
+
+```bash
+make docker-build
+```
+
+Then add the server to your Claude Code configuration using:
+
+```bash
+claude mcp add-json cube '{
+  "command": "docker",
+  "args": [
+    "run", "-i", "--rm",
+    "-e", "CUBE_ENDPOINT=https://your-cube-instance.cubecloud.dev/cubejs-api/v1",
+    "-e", "CUBE_API_SECRET=your_api_secret_here",
+    "mcp-cube-server"
+  ],
+  "env": {}
+}'
+```
+
 ## Contributing
 
 1. Fork the repository
